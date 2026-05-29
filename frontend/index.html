@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DermaScan — Clasificador de Lesiones</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variables ─────────────────────────────────────────────────────────── */
+    :root {
+      --bg:         #0d0f14;
+      --surface:    #13161e;
+      --surface2:   #1a1e2a;
+      --border:     #252a38;
+      --accent:     #4fffb0;
+      --accent2:    #ff4f6e;
+      --accent3:    #4fa8ff;
+      --text:       #e8eaf0;
+      --muted:      #5a6080;
+      --danger:     #ff4f6e;
+      --safe:       #4fffb0;
+      --font-serif: 'DM Serif Display', Georgia, serif;
+      --font-mono:  'DM Mono', 'Courier New', monospace;
+      --radius:     12px;
+      --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ── Reset & base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-mono);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    /* ── Background grid ───────────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(79,255,176,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79,255,176,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────────── */
+    header {
+      width: 100%;
+      max-width: 1100px;
+      padding: 56px 24px 32px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-tag {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-tag::before {
+      content: '';
+      width: 24px; height: 1px;
+      background: var(--accent);
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      line-height: 1.1;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    h1 em {
+      color: var(--accent);
+      font-style: italic;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 480px;
+    }
+
+    /* ── Status pill ───────────────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background var(--transition);
+    }
+
+    .status-dot.connected  { background: var(--safe); box-shadow: 0 0 8px var(--safe); }
+    .status-dot.error      { background: var(--danger); }
+    .status-dot.checking   { animation: pulse 1s ease infinite; background: var(--accent3); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    #status-text { transition: color var(--transition); }
+
+    /* ── Main layout ───────────────────────────────────────────────────────── */
+    main {
+      width: 100%;
+      max-width: 1100px;
+      padding: 0 24px 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .row-top {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 760px) {
+      .row-top { grid-template-columns: 1fr; }
+    }
+
+    /* GradCAM images side by side */
+    .gradcam-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 600px) { .gradcam-grid { grid-template-columns: 1fr; } }
+
+    .gradcam-img-block { display: flex; flex-direction: column; gap: 10px; }
+    .gradcam-img-label { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); }
+    .gradcam-img-wrap {
+      border-radius: 8px; overflow: hidden;
+      background: var(--surface2); border: 1px solid var(--border);
+      aspect-ratio: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .gradcam-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .gradcam-empty {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; color: var(--muted); font-size: 12px;
+      text-align: center; padding: 32px;
+      grid-column: 1 / -1;
+    }
+
+    /* ── Cards ─────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.4;
+    }
+
+    .card-label {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Upload zone ───────────────────────────────────────────────────────── */
+    .upload-zone {
+      border: 1.5px dashed var(--border);
+      border-radius: 8px;
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color var(--transition), background var(--transition);
+      position: relative;
+      overflow: hidden;
+      background: var(--surface2);
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(79,255,176,0.04);
+    }
+
+    .upload-zone img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      border-radius: 6px;
+      position: absolute;
+      inset: 0;
+    }
+
+    .upload-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .upload-icon {
+      width: 44px; height: 44px;
+      border: 1.5px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .upload-text {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .upload-text strong {
+      color: var(--accent);
+      display: block;
+      font-weight: 500;
+    }
+
+    #file-input { display: none; }
+
+    /* ── Analyze button ────────────────────────────────────────────────────── */
+    .btn-analyze {
+      width: 100%;
+      margin-top: 16px;
+      padding: 14px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: opacity var(--transition), transform var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-analyze:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+    .btn-analyze:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(13,15,20,0.3);
+      border-top-color: var(--bg);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results ───────────────────────────────────────────────────────────── */
+    .results-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Verdict */
+    .verdict {
+      border-radius: 8px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all var(--transition);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      min-height: 100px;
+      justify-content: center;
+    }
+
+    .verdict.malignant {
+      background: rgba(255,79,110,0.08);
+      border-color: rgba(255,79,110,0.3);
+    }
+
+    .verdict.benign {
+      background: rgba(79,255,176,0.06);
+      border-color: rgba(79,255,176,0.2);
+    }
+
+    .verdict-badge {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      width: fit-content;
+    }
+
+    .verdict.malignant .verdict-badge { background: rgba(255,79,110,0.2); color: var(--danger); }
+    .verdict.benign    .verdict-badge { background: rgba(79,255,176,0.15); color: var(--safe); }
+
+    .verdict-class {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      line-height: 1.2;
+      margin-top: 4px;
+    }
+
+    .verdict.malignant .verdict-class { color: var(--danger); }
+    .verdict.benign    .verdict-class { color: var(--safe); }
+
+    .verdict-code {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Confidence bar */
+    .confidence-block { display: flex; flex-direction: column; gap: 8px; }
+
+    .conf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .conf-value {
+      font-size: 20px;
+      font-family: var(--font-serif);
+      color: var(--accent3);
+    }
+
+    .conf-bar-bg {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .conf-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent3), var(--accent));
+      border-radius: 2px;
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+      width: 0%;
+    }
+
+    /* Top 3 */
+    .top3-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .top3-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .top3-rank {
+      font-size: 10px;
+      color: var(--muted);
+      width: 14px;
+      flex-shrink: 0;
+    }
+
+    .top3-label { flex: 1; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .top3-bar-bg {
+      width: 60px;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .top3-bar-fill {
+      height: 100%;
+      background: var(--accent3);
+      border-radius: 2px;
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+      width: 0%;
+    }
+
+    .top3-item:first-child .top3-bar-fill { background: var(--accent); }
+
+    .top3-prob {
+      font-size: 11px;
+      color: var(--muted);
+      width: 38px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+      padding: 32px 0;
+    }
+
+    .empty-glyph {
+      font-size: 2rem;
+      opacity: 0.3;
+    }
+
+    /* Error state */
+    .error-msg {
+      background: rgba(255,79,110,0.08);
+      border: 1px solid rgba(255,79,110,0.25);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 12px;
+      color: var(--danger);
+      display: none;
+    }
+
+    /* ── Disclaimer ─────────────────────────────────────────────────────────── */
+    footer {
+      position: relative; z-index: 1;
+      width: 100%; max-width: 1100px;
+      padding: 0 24px 40px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.6;
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+    }
+
+    /* ── Animations ─────────────────────────────────────────────────────────── */
+    .fade-in {
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo-tag">HAM10000 · Deep Learning · UPF 2026</div>
+    <h1>Derma<em>Scan</em></h1>
+    <p class="subtitle">
+      Skin lesion classifier using a convolutional neural network.
+      Upload a dermatoscopic image and the model predicts the type of lesion.
+    </p>
+    <div class="status-bar">
+      <div class="status-dot checking" id="status-dot"></div>
+      <span id="status-text">Verifying server's connection...</span>
+    </div>
+  </header>
+
+  <main>
+
+    <div class="row-top">
+
+      <!-- Upload card -->
+      <div class="card">
+        <div class="card-label">01 — Entry image</div>
+
+        <div
+          class="upload-zone"
+          id="upload-zone"
+          onclick="document.getElementById('file-input').click()"
+          ondragover="handleDragOver(event)"
+          ondragleave="handleDragLeave(event)"
+          ondrop="handleDrop(event)"
+        >
+          <div class="upload-placeholder" id="upload-placeholder">
+            <div class="upload-icon">⊕</div>
+            <div class="upload-text">
+              <strong>Select or drag</strong>
+              JPG · PNG · WEBP<br/>
+            </div>
+          </div>
+        </div>
+
+        <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/bmp" onchange="handleFileSelect(event)" />
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <button class="btn-analyze" id="btn-analyze" disabled onclick="runAnalysis()">
+          <div class="spinner" id="spinner"></div>
+          <span id="btn-text">Analizar imagen</span>
+        </button>
+      </div>
+
+      <!-- Results card -->
+      <div class="card">
+        <div class="card-label">02 — Analysis results</div>
+        <div class="results-panel" id="results-panel">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-glyph">◎</div>
+            <span>Upload an image to<br/>obtain the prediction</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- GradCAM row -->
+    <div class="card">
+      <div class="card-label">03 — GradCAM Visualization</div>
+      <div class="gradcam-grid" id="gradcam-grid">
+        <div class="gradcam-empty">
+          <div class="empty-glyph">⬡</div>
+          <span>The activation map will appear<br/>after analyzing an image</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIG — la URL se puede cambiar en el input, o hardcodear aquí
+    // ─────────────────────────────────────────────────────────────────────────
+    const API_URL = "http://localhost:8000";
+
+    let selectedFile = null;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Status
+    // ─────────────────────────────────────────────────────────────────────────
+    function setStatus(state, text) {
+      const dot  = document.getElementById('status-dot');
+      const span = document.getElementById('status-text');
+      dot.className = 'status-dot ' + state;
+      span.textContent = text;
+    }
+
+    async function checkHealth() {
+      if (!API_URL) {
+        setStatus('error', 'Introduce URL server to connect');
+        return false;
+      }
+      setStatus('checking', 'Verifying connection...');
+      try {
+        const res = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const data = await res.json();
+          setStatus('connected', `Connected · ${data.device ?? 'CPU'}`);
+          return true;
+        } else {
+          setStatus('error', 'Server responded with error');
+          return false;
+        }
+      } catch {
+        setStatus('error', 'Cannot connect — ¿is uvicorn running?');
+        return false;
+      }
+    }
+
+    window.addEventListener('load', checkHealth);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // File handling
+    // ─────────────────────────────────────────────────────────────────────────
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (file) loadFile(file);
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      document.getElementById('upload-zone').classList.add('drag-over');
+    }
+
+    function handleDragLeave() {
+      document.getElementById('upload-zone').classList.remove('drag-over');
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      document.getElementById('upload-zone').classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) loadFile(file);
+    }
+
+    function loadFile(file) {
+      selectedFile = file;
+      hideError();
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const zone        = document.getElementById('upload-zone');
+        const placeholder = document.getElementById('upload-placeholder');
+        placeholder.style.display = 'none';
+
+        let img = zone.querySelector('img');
+        if (!img) { img = document.createElement('img'); zone.appendChild(img); }
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+
+      document.getElementById('btn-analyze').disabled = false;
+      resetResults();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Analysis
+    // ─────────────────────────────────────────────────────────────────────────
+    async function runAnalysis() {
+      if (!selectedFile) return;
+
+      const ok = await checkHealth();
+      if (!ok) { showError('Sin conexión con el servidor. Asegúrate de que uvicorn está corriendo.'); return; }
+
+      setLoading(true);
+      hideError();
+      resetResults();
+
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      try {
+        const res  = await fetch(`${API_URL}/gradcam`, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (!res.ok || data.detail) {
+          showError(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
+          return;
+        }
+
+        renderResults(data.prediction);
+        renderGradcam(data.original, data.gradcam);
+
+      } catch (err) {
+        showError('Error de red al contactar con el servidor.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render results
+    // ─────────────────────────────────────────────────────────────────────────
+    function renderResults(data) {
+      const panel = document.getElementById('results-panel');
+      panel.innerHTML = '';
+
+      const isMal = data.malignant;
+
+      panel.innerHTML = `
+        <!-- Verdict -->
+        <div class="verdict ${isMal ? 'malignant' : 'benign'} fade-in">
+          <div class="verdict-badge">${isMal ? '⚠ Potentially malignant' : '✓ Benign'}</div>
+          <div class="verdict-class">${data.label}</div>
+          <div class="verdict-code">Code: <strong>${data.code.toUpperCase()}</strong></div>
+        </div>
+
+        <!-- Confidence -->
+        <div class="confidence-block fade-in" style="animation-delay:0.1s">
+          <div class="conf-header">
+            <span>Model Confidence</span>
+            <span class="conf-value">${data.confidence}%</span>
+          </div>
+          <div class="conf-bar-bg">
+            <div class="conf-bar-fill" id="conf-fill"></div>
+          </div>
+        </div>
+
+        <!-- Top 3 -->
+        <div class="fade-in" style="animation-delay:0.2s">
+          <div class="card-label" style="margin-bottom:10px">Top alternatives</div>
+          <div class="top3-list" id="top3-list"></div>
+        </div>
+      `;
+
+      // Animated confidence bar
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          document.getElementById('conf-fill').style.width = `${data.confidence}%`;
+        }, 50);
+      });
+
+      // Top 3 bars
+      const top3List = document.getElementById('top3-list');
+      data.top3.forEach((item, i) => {
+        const el = document.createElement('div');
+        el.className = 'top3-item';
+        el.innerHTML = `
+          <span class="top3-rank">#${i+1}</span>
+          <span class="top3-label">${item.label}</span>
+          <div class="top3-bar-bg"><div class="top3-bar-fill" id="bar-${i}"></div></div>
+          <span class="top3-prob">${item.prob}%</span>
+        `;
+        top3List.appendChild(el);
+      });
+
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          data.top3.forEach((item, i) => {
+            const fill = document.getElementById(`bar-${i}`);
+            if (fill) fill.style.width = `${item.prob}%`;
+          });
+        }, 100);
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render: GradCAM
+    // ─────────────────────────────────────────────────────────────────────────
+    function renderGradcam(originalB64, gradcamB64) {
+      const grid = document.getElementById('gradcam-grid');
+      if (!grid) return;
+      grid.innerHTML = `
+        <div class="gradcam-img-block fade-in">
+          <div class="gradcam-img-label">Original Image</div>
+          <div class="gradcam-img-wrap">
+            <img src="data:image/png;base64,${originalB64}" alt="Original Image" />
+          </div>
+        </div>
+        <div class="gradcam-img-block fade-in" style="animation-delay:0.15s">
+          <div class="gradcam-img-label">Mapa de activaciones (GradCAM)</div>
+          <div class="gradcam-img-wrap">
+            <img src="data:image/png;base64,${gradcamB64}" alt="GradCAM" />
+          </div>
+        </div>
+      `;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+    function resetResults() {
+      document.getElementById('results-panel').innerHTML = `
+        <div class="empty-state" id="empty-state">
+          <div class="empty-glyph">◎</div>
+          <span>Upload an image to<br/>obtain the prediction</span>
+        </div>`;
+    }
+
+    function setLoading(on) {
+      const btn     = document.getElementById('btn-analyze');
+      const spinner = document.getElementById('spinner');
+      const txt     = document.getElementById('btn-text');
+      btn.disabled      = on;
+      spinner.style.display = on ? 'block' : 'none';
+      txt.textContent   = on ? 'Analyzing...' : 'Analyze image';
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById('error-msg').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
