@@ -5,7 +5,7 @@
 ### Requirements
 
 - Python 3.10+
-- The trained model file `best_model_final.pt` placed inside `frontend/models/`
+- The trained model file `best_model_final.pt` placed inside `frontend`
 
 > ⚠️ The model is not included in this repository.
 
