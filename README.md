@@ -7,7 +7,7 @@
 - Python 3.10+
 - The trained model file `best_model_final.pt` placed inside `frontend`
 
-> ⚠️ The model is not included in this repository.
+
 
 ### Setup
 
@@ -19,7 +19,7 @@ python -m venv .venv
 pip install fastapi uvicorn torch torchvision pillow opencv-python numpy
 ```
 
-### Run
+### Run the frontend
 
 ```bash
 # Windows
@@ -31,3 +31,4 @@ uvicorn api:app --reload --port 8000
 ```
 
 Open your browser at: **http://localhost:8000**
+
