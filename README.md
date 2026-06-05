@@ -27,6 +27,10 @@ pip install fastapi uvicorn torch torchvision pillow opencv-python numpy
 # macOS / Linux
 source .venv/bin/activate
 
+### Run the other codes
+they are just colabs so just executing them should be sufficient.
+Taking phase1_checkpoint.pt from models directly should save you quite a lot of time.
+
 uvicorn api:app --reload --port 8000
 ```
 
